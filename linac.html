@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Linac Escape Game</title>
+  <style>
+    .hidden { display: none; }
+    .visible { display: block; }
+    button { margin: 10px; }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation Buttons -->
+  <div id="navButtons">
+    <button onclick="prevStep()">Zurück</button>
+    <button onclick="nextStep()">Weiter</button>
+    <button onclick="returnToMap()">Zurück zur Karte</button>
+  </div>
+
+  <!-- Abschnitt 1 -->
+  <section class="hidden" id="step1">
+    <h2>Auftrag 1</h2>
+    <p>Beobachte das Exponat mit der Kugel und den Hebebühnen. Ziel: Versuche, die Kugel bis in den zweiten Slot zu bekommen.</p>
+    <textarea id="answer1" placeholder="Deine Antwort" rows="4" cols="50"></textarea>
+  </section>
+
+  <!-- Abschnitt 2 -->
+<section class="hidden" id="step2">
+    <h2>Auftrag 2</h2>
+    <p>Bringe die vier Bilder in die richtige Reihenfolge, indem du sie unten in die passenden Felder ziehst. Ordne sie den Phasen 1 bis 4 zu. Gib außerdem an, wann die Kugel viel kinetische (Bewegungs-)energie und wann sie viel potentielle (Höhen-)energie hat.</p>
+    <div id="dragdrop-phase2">
+        <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+            <!-- Randomized image containers -->
+            <div id="random-images" style="display: flex; gap: 10px;">
+                <!-- Images will be inserted here by JS -->
+            </div>
+        </div>
+        <div style="display: flex; gap: 10px;">
+            <!-- Drop targets for phases 1-4 -->
+            <div class="drop-target" data-phase="1" style="width: 130px; height: 130px; border: 2px dashed #888; display: flex; align-items: center; justify-content: center; flex-direction: column;">
+                <span>Phase 1</span>
+            </div>
+            <div class="drop-target" data-phase="2" style="width: 130px; height: 130px; border: 2px dashed #888; display: flex; align-items: center; justify-content: center; flex-direction: column;">
+                <span>Phase 2</span>
+            </div>
+            <div class="drop-target" data-phase="3" style="width: 130px; height: 130px; border: 2px dashed #888; display: flex; align-items: center; justify-content: center; flex-direction: column;">
+                <span>Phase 3</span>
+            </div>
+            <div class="drop-target" data-phase="4" style="width: 130px; height: 130px; border: 2px dashed #888; display: flex; align-items: center; justify-content: center; flex-direction: column;">
+                <span>Phase 4</span>
+            </div>
+        </div>
+        <!-- Hidden input for answer2 to avoid JS errors -->
+        <input type="hidden" id="answer2" value="">
+    </div>
+    <script>
+        // Images data
+        const phaseImages = [
+            { src: "linac/phase1.png", alt: "Phase 1", phase: 1 },
+            { src: "linac/phase2.png", alt: "Phase 2", phase: 2 },
+            { src: "linac/phase3.png", alt: "Phase 3", phase: 3 },
+            { src: "linac/phase4.png", alt: "Phase 4", phase: 4 }
+        ];
+
+        // Shuffle function
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        // Render shuffled images in the top container
+        function renderRandomImages() {
+            const container = document.getElementById('random-images');
+            container.innerHTML = '';
+            shuffle([...phaseImages]).forEach(imgData => {
+                const img = document.createElement('img');
+                img.src = imgData.src;
+                img.alt = imgData.alt;
+                img.width = 120;
+                img.draggable = true;
+                img.classList.add('draggable-phase-img');
+                img.dataset.phase = imgData.phase;
+                img.style.cursor = 'grab';
+                img.style.margin = '0 5px';
+                container.appendChild(img);
+            });
+        }
+
+        // Drag & Drop logic
+        let draggedImg = null;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            renderRandomImages();
+
+            // Drag events for images
+            document.querySelectorAll('.draggable-phase-img').forEach(img => {
+                img.addEventListener('dragstart', function(e) {
+                    draggedImg = e.target;
+                    setTimeout(() => draggedImg.style.visibility = 'hidden', 0);
+                });
+                img.addEventListener('dragend', function(e) {
+                    if (draggedImg) {
+                        draggedImg.style.visibility = 'visible';
+                        draggedImg = null;
+                    }
+                });
+            });
+
+            // Allow dropping on drop targets
+            document.querySelectorAll('.drop-target').forEach(target => {
+                target.addEventListener('dragover', function(e) {
+                    e.preventDefault();
+                });
+                target.addEventListener('drop', function(e) {
+                    e.preventDefault();
+                    if (draggedImg) {
+                        // Remove any existing image in this target
+                        const existing = target.querySelector('img');
+                        if (existing) {
+                            document.getElementById('random-images').appendChild(existing);
+                        }
+                        target.appendChild(draggedImg);
+                        draggedImg.style.visibility = 'visible';
+                        draggedImg = null;
+                    }
+                });
+            });
+
+            // Allow dragging images back to the random-images container
+            const randomImagesContainer = document.getElementById('random-images');
+            randomImagesContainer.addEventListener('dragover', function(e) {
+                e.preventDefault();
+            });
+            randomImagesContainer.addEventListener('drop', function(e) {
+                e.preventDefault();
+                if (draggedImg) {
+                    randomImagesContainer.appendChild(draggedImg);
+                    draggedImg.style.visibility = 'visible';
+                    draggedImg = null;
+                }
+            });
+        });
+
+        // Re-render images if user returns to this step
+        // Save the current image positions in localStorage
+        function savePhase2ImagePositions() {
+            const positions = {};
+            // For each drop target (phase 1-4)
+            document.querySelectorAll('.drop-target').forEach(target => {
+            const img = target.querySelector('img');
+            positions[target.dataset.phase] = img ? img.dataset.phase : null;
+            });
+            // For the random images container
+            const randomImages = [];
+            document.querySelectorAll('#random-images img').forEach(img => {
+            randomImages.push(img.dataset.phase);
+            });
+            positions.random = randomImages;
+            localStorage.setItem('phase2ImagePositions', JSON.stringify(positions));
+        }
+
+        // Restore image positions from localStorage
+        function restorePhase2ImagePositions() {
+            const data = localStorage.getItem('phase2ImagePositions');
+            if (!data) {
+            renderRandomImages();
+            return;
+            }
+            const positions = JSON.parse(data);
+            // Clear all containers
+            document.querySelectorAll('.drop-target').forEach(target => {
+            target.innerHTML = `<span>Phase ${target.dataset.phase}</span>`;
+            });
+            const randomImagesContainer = document.getElementById('random-images');
+            randomImagesContainer.innerHTML = '';
+
+            // Helper to create image element by phase
+            function createImg(phase) {
+            const imgData = phaseImages.find(p => p.phase == phase);
+            if (!imgData) return null;
+            const img = document.createElement('img');
+            img.src = imgData.src;
+            img.alt = imgData.alt;
+            img.width = 120;
+            img.draggable = true;
+            img.classList.add('draggable-phase-img');
+            img.dataset.phase = imgData.phase;
+            img.style.cursor = 'grab';
+            img.style.margin = '0 5px';
+            return img;
+            }
+
+            // Place images in drop targets
+            for (let i = 1; i <= 4; i++) {
+            const phase = String(i);
+            if (positions[phase]) {
+                const img = createImg(positions[phase]);
+                if (img) {
+                document.querySelector(`.drop-target[data-phase="${phase}"]`).appendChild(img);
+                }
+            }
+            }
+            // Place images in random container
+            if (positions.random && Array.isArray(positions.random)) {
+            positions.random.forEach(phase => {
+                const img = createImg(phase);
+                if (img) randomImagesContainer.appendChild(img);
+            });
+            }
+
+            // Re-attach drag events
+            attachDragEvents();
+        }
+
+        // Attach drag events to all draggable images
+        function attachDragEvents() {
+            document.querySelectorAll('.draggable-phase-img').forEach(img => {
+            img.addEventListener('dragstart', function(e) {
+                draggedImg = e.target;
+                setTimeout(() => draggedImg.style.visibility = 'hidden', 0);
+            });
+            img.addEventListener('dragend', function(e) {
+                if (draggedImg) {
+                draggedImg.style.visibility = 'visible';
+                draggedImg = null;
+                }
+            });
+            });
+        }
+
+        // Update save logic on drop
+        function setupPhase2SaveOnDrop() {
+            document.querySelectorAll('.drop-target, #random-images').forEach(target => {
+            target.addEventListener('drop', function(e) {
+                setTimeout(savePhase2ImagePositions, 10);
+            });
+            });
+        }
+
+        // Call restore on DOMContentLoaded and setup save on drop
+        document.addEventListener('DOMContentLoaded', function() {
+            restorePhase2ImagePositions();
+            setupPhase2SaveOnDrop();
+        });
+
+        // Also restore when returning to this step
+        function resetPhase2Images() {
+            restorePhase2ImagePositions();
+        }
+    </script>
+  </section>
+    </script>
+  </section>
+
+  <!-- Abschnitt 3 -->
+  <section class="hidden" id="step3">
+    <h2>Auftrag 3</h2>
+    <p>Beschreibe, wie sich die Geschwindigkeit der Kugel im Verlauf verändert.</p>
+    <input type="text" id="answer3" placeholder="Deine Antwort">
+  </section>
+
+  <!-- Abschnitt 4 -->
+  <section class="hidden" id="step4">
+    <h2>Auftrag 4</h2>
+    <p>Warum erscheint das Bild in 3D?</p>
+    <input type="text" id="answer4" placeholder="Deine Antwort">
+  </section>
+
+  <!-- Abschluss-Nachricht -->
+  <section class="hidden" id="stepEnd">
+    <h2>Du hast alle Aufgaben gelöst!</h2>
+    <p>Gehe zurück zur Karte, um deine Belohnung zu holen.</p>
+  </section>
+
+  <script>
+    let currentStepLinac = 1;
+    const totalSteps = 4;
+
+    // Antworten laden (falls vorhanden)
+    window.onload = function() {
+      if (localStorage.getItem('answer1')) {
+        document.getElementById('answer1').value = localStorage.getItem('answer1');
+      }
+      if (localStorage.getItem('answer2')) {
+        document.getElementById('answer2').value = localStorage.getItem('answer2');
+      }
+      if (localStorage.getItem('answer3')) {
+        document.getElementById('answer3').value = localStorage.getItem('answer3');
+      }
+      if (localStorage.getItem('answer4')) {
+        document.getElementById('answer4').value = localStorage.getItem('answer4');
+      }
+    if (localStorage.getItem('currentStepLinac')) {
+      currentStepLinac = parseInt(localStorage.getItem('currentStepLinac'));
+    }
+      showStep(currentStepLinac);
+    }
+
+    function saveProgress() {
+      localStorage.setItem('answer1', document.getElementById('answer1').value);
+      localStorage.setItem('answer2', document.getElementById('answer2').value);
+      localStorage.setItem('answer3', document.getElementById('answer3').value);
+      localStorage.setItem('answer4', document.getElementById('answer4').value);
+      localStorage.setItem('currentStepLinac', currentStepLinac);
+    }
+
+    function showStep(step) {
+      // Alle Abschnitte verstecken
+      for (let i = 1; i <= totalSteps; i++) {
+        document.getElementById(`step${i}`).classList.add('hidden');
+      }
+      document.getElementById('stepEnd').classList.add('hidden');
+
+      // Aktuellen Abschnitt anzeigen
+      if (step > totalSteps) {
+        document.getElementById('stepEnd').classList.remove('hidden');
+      } else {
+        document.getElementById(`step${step}`).classList.remove('hidden');
+      }
+    }
+
+    function nextStep() {
+      saveProgress();
+      if (currentStepLinac === 2) {
+        const correctOrder = ['1', '2', '3', '4'];
+        let isCorrect = true;
+        document.querySelectorAll('.drop-target').forEach((target, idx) => {
+            const img = target.querySelector('img');
+            if (!img || img.dataset.phase !== correctOrder[idx]) {
+            isCorrect = false;
+            }
+        });
+        if (!isCorrect) {
+            alert("Die Phasen wurden nicht in die richtige Reihenfolge gebracht");
+            return;
+        }
+        currentStepLinac++;
+      }
+      else if (currentStepLinac < totalSteps) {
+        currentStepLinac++;
+      } else {
+        currentStepLinac = totalSteps + 1;
+      }
+      showStep(currentStepLinac);
+    }
+
+    function prevStep() {
+      saveProgress();
+      if (currentStepLinac > 1) {
+        currentStepLinac--;
+      }
+      showStep(currentStepLinac);
+    }
+
+    function returnToMap() {
+      saveProgress();
+      // Hier die URL deiner Karte einfügen:
+      window.location.href = "index.html";
+    }
+  </script>
+
+</body>
+</html>

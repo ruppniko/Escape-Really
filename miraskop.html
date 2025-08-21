@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Miraskop Escape Game</title>
+  <style>
+    .hidden { display: none; }
+    .visible { display: block; }
+    button { margin: 10px; }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation Buttons -->
+  <div id="navButtons">
+    <button onclick="prevStep()">Zurück</button>
+    <button onclick="nextStep()">Weiter</button>
+    <button onclick="returnToMap()">Zurück zur Karte</button>
+  </div>
+
+  <!-- Abschnitt 1 -->
+  <section class="hidden" id="step1">
+    <h2>Auftrag 1</h2>
+    <p>schaue dir das Miraskop genauer an. beschreibe in 1-2 Sätzen was du siehst und was dich daran überrascht</p>
+    <input type="text" id="answer1">
+  </section>
+
+<!-- Abschnitt 2 -->
+<section class="hidden" id="step2">
+  <h2>Auftrag 2</h2>
+  <p>
+    Beobachte den Strahlengang im Miraskop. Ändere den Winkel des einfallenden
+    Strahls mit dem Schieberegler und sieh dir an, wie sich der Strahlengang
+    verändert.
+  </p>
+  <input type="range" id="angle-slider" min="30" max="150" value="0" />
+  <svg id="ray-svg" viewBox="-1.5 -1.5 3 3" width="100%" height="100%" style="display:block; margin:0; padding:0;">
+  <path id="ray-path" stroke="red" fill="none" stroke-width="0.05" />
+
+  <!-- Markierung Startpunkt -->
+  <circle id="start-point" r="0.1" fill="green" />
+  <circle id="start-point-image" r="0.1" fill="#90ee90" />
+
+  
+  <!-- Markierung 1. Reflexion -->
+  <circle id="reflection1" r="0.05" fill="blue" />
+  
+  <!-- Markierung 2. Reflexion -->
+  <circle id="reflection2" r="0.05" fill="orange" />
+  >
+  <!-- Konkaver Spiegel: y = -x²/4 + 4 → Scheitel bei y = 4 -->
+  <path
+    d="M -1.5,-0.5 Q 0,0.5 1.5,-0.5"
+    stroke="red"
+    stroke-width="0.03"
+    fill="none"
+  />
+
+  <!-- Konvexer Spiegel: y = x²/4 → Scheitel bei y = 0 -->
+  <path
+    d="M -1.5,-0.5 Q 0,-1.5 1.5,-0.5"
+    stroke="black"
+    stroke-width="0.03"
+    fill="none"
+  />
+  </svg>
+
+  <script>
+    let p0 = { x: 0, y: 0 };
+    let dragging = false;
+
+    function degToRad(deg) {
+      return (deg * Math.PI) / 180;
+    }
+
+    function findParabolaIntersection(x0, y0, dx, dy, isConcave) {
+      const offset = isConcave ? 1 : 0;
+      const sign = isConcave ? -1 : 1;
+
+      const epsilon = 1e-8; // Toleranzgrenze für dx ≈ 0
+
+      // Sonderfall: fast vertikale Strahlen (dx ≈ 0)
+      if (Math.abs(dx) < epsilon) {
+        const x = x0; // x bleibt konstant
+        const yParabola = sign * (x * x) / 4 + offset;
+        const t = (yParabola - y0) / dy;
+
+        if (t <= 0 || x < -4 || x > 4) return null;
+
+        // Normale wie bisher berechnen:
+        const tangentSlope = isConcave ? (-x / 2) : (x / 2);
+        let nx = -tangentSlope;
+        let ny = 1;
+        const length = Math.hypot(nx, ny);
+        nx /= length;
+        ny /= length;
+
+        return { x, y: yParabola, normalVec: { x: nx, y: ny } };
+      }
+
+      // Normaler Fall: quadratische Gleichung
+      const A = (sign * dx * dx) / 4;
+      const B = (sign * dx * x0) / 4 - dy;
+      const C = (sign * x0 * x0) / 4 + offset - y0;
+
+      const D = B * B - 4 * A * C;
+      if (D < 0) return null;
+
+      const sqrtD = Math.sqrt(D);
+      const t1 = (-B - sqrtD) / (2 * A);
+      const t2 = (-B + sqrtD) / (2 * A);
+
+      const candidates = [t1, t2].filter(t => t > 0);
+      for (const t of candidates) {
+        const x = x0 + dx * t;
+        const y = y0 + dy * t;
+
+        if (x < -4 || x > 4) continue;
+
+        const tangentSlope = isConcave ? (-x / 2) : (x / 2);
+        let nx = -tangentSlope;
+        let ny = 1;
+        const length = Math.hypot(nx, ny);
+        nx /= length;
+        ny /= length;
+
+        return { x, y, normalVec: { x: nx, y: ny } };
+      }
+
+      return null;
+    }
+
+
+
+
+    function reflectVector(dx, dy, nx, ny) {
+      const dot = dx * nx + dy * ny;
+      const rx = dx - 2 * dot * nx;
+      const ry = dy - 2 * dot * ny;
+      return { dx: rx, dy: ry };
+    }
+
+    function updateRay() {
+      const angleDeg = document.getElementById("angle-slider").value;
+      const angleRad = degToRad(angleDeg);
+
+      let dx = Math.cos(angleRad);
+      let dy = Math.sin(angleRad);
+
+      // 1. Spiegel (konkav)
+      let hit1 = findParabolaIntersection(p0.x, p0.y, dx, dy, true);
+      if (!hit1) return;
+
+      let r1 = reflectVector(dx, dy, hit1.normalVec.x, hit1.normalVec.y);
+      let dx2 = r1.dx;
+      let dy2 = r1.dy;
+
+      // 2. Spiegel (konvex)
+      let hit2 = findParabolaIntersection(hit1.x, hit1.y, dx2, dy2, false);
+      if (!hit2) return;
+
+      let r2 = reflectVector(dx2, dy2, hit2.normalVec.x, hit2.normalVec.y);
+      let dx3 = r2.dx;
+      let dy3 = r2.dy;
+
+      // Strahl verfolgen bis y <= -2
+      let s;
+      if (Math.abs(dy3) < 0.001) {
+        s = 10;
+      } else {
+        s = (1.5 - hit2.y) / dy3;
+      }
+      if (s < 0) s = 0;
+      let endX = hit2.x + dx3 * s;
+      let endY = hit2.y + dy3 * s;
+
+      // SVG aktualisieren
+      const rayPath = `M ${p0.x},${-p0.y}
+                      L ${hit1.x},${-hit1.y}
+                      L ${hit2.x},${-hit2.y}
+                      L ${endX},${-endY}`;
+      document.getElementById("ray-path").setAttribute("d", rayPath);
+
+      // Punkte markieren
+      document.getElementById("start-point").setAttribute("cx", p0.x);
+      document.getElementById("start-point").setAttribute("cy", -p0.y);
+      document.getElementById("start-point-image").setAttribute("cx", -p0.x);
+      document.getElementById("start-point-image").setAttribute("cy", -p0.y-1);
+      document.getElementById("reflection1").setAttribute("cx", hit1.x);
+      document.getElementById("reflection1").setAttribute("cy", -hit1.y);
+      document.getElementById("reflection2").setAttribute("cx", hit2.x);
+      document.getElementById("reflection2").setAttribute("cy", -hit2.y);
+    }
+
+    // --- Dragging logic for start point ---
+    const svg = document.getElementById("ray-svg");
+    const startPoint = document.getElementById("start-point");
+
+    function svgPointFromEvent(evt) {
+      const pt = svg.createSVGPoint();
+      pt.x = evt.clientX;
+      pt.y = evt.clientY;
+      const ctm = svg.getScreenCTM();
+      if (!ctm) return { x: 0, y: 0 };
+      const transformed = pt.matrixTransform(ctm.inverse());
+      return { x: transformed.x, y: -transformed.y };
+    }
+
+    startPoint.addEventListener("mousedown", function(evt) {
+      dragging = true;
+      evt.stopPropagation();
+    });
+
+    svg.addEventListener("mousemove", function(evt) {
+      if (!dragging) return;
+      const { x, y } = svgPointFromEvent(evt);
+      // Clamp to allowed region (e.g., inside mirrors)
+      p0.x = Math.max(-4, Math.min(4, x));
+      p0.y = Math.max(-2, Math.min(2, y));
+      updateRay();
+    });
+
+    window.addEventListener("mouseup", function(evt) {
+      if (dragging) dragging = false;
+    });
+
+
+    document
+      .getElementById("angle-slider")
+      .addEventListener("input", updateRay);
+    updateRay();
+  </script>
+</section>
+
+
+<section class="hidden" id="step3">
+  <h2>Zeichenaufgabe</h2>
+  <p>Zeichne den Strahlengang:</p>
+  <button id="add-line-btn" style="margin-bottom:8px;">Linie hinzufügen</button>
+  <button id="remove-line-btn" style="margin-bottom:8px;">Linie löschen</button>
+  <div style="position:relative; width:100%; max-width:600px; margin:auto;">
+    <img src="miragespiegel_backround.png" 
+         alt="Miragespiegel Hintergrund" 
+         style="width:600px; height:300px; display:block; position:absolute; left:0; top:0; z-index:0; pointer-events:none;">
+    <svg id="draw-svg" viewBox="0 0 600 300" width="100%" height="300" 
+         style="border:1px solid rgb(0, 0, 0); background:transparent; position:relative; z-index:1;">
+      <g id="user-lines"></g>
+    </svg>
+  </div>
+</section>
+
+
+<script>
+// --- Drawing logic for Section 3: 4 draggable points per line ---
+// Now with persistent saving/loading of lines!
+(function() {
+  const svg = document.getElementById("draw-svg");
+  const userLines = document.getElementById("user-lines");
+  const addBtn = document.getElementById("add-line-btn");
+  const removeBtn = document.getElementById("remove-line-btn");
+
+  let lines = []; // Each line: { points: [ {x, y}, ... ], polyline, handles: [circle, ...] }
+  let dragging = null; // { lineIdx, pointIdx }
+
+  // Utility: SVG coords from event
+  function svgPoint(evt) {
+    const pt = svg.createSVGPoint();
+    pt.x = evt.clientX;
+    pt.y = evt.clientY;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return { x: 0, y: 0 };
+    const transformed = pt.matrixTransform(ctm.inverse());
+    return { x: transformed.x, y: transformed.y };
+  }
+
+  // Draw or update a line and its handles
+  function updateLine(line) {
+    line.polyline.setAttribute("points", line.points.map(pt => pt.x + "," + pt.y).join(" "));
+    line.handles.forEach((circle, i) => {
+      circle.setAttribute("cx", line.points[i].x);
+      circle.setAttribute("cy", line.points[i].y);
+    });
+  }
+
+  // Save all lines to localStorage
+  function saveLines() {
+    const data = lines.map(line => line.points);
+    localStorage.setItem("miraskopUserLines", JSON.stringify(data));
+  }
+
+  // Remove all lines and handles from SVG
+  function clearSVGLines() {
+    while (userLines.firstChild) userLines.removeChild(userLines.firstChild);
+  }
+
+  // Load lines from localStorage
+  function loadLines() {
+    clearSVGLines();
+    lines = [];
+    const data = JSON.parse(localStorage.getItem("miraskopUserLines") || "[]");
+    data.forEach(pts => {
+      const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+      polyline.setAttribute("stroke", "blue");
+      polyline.setAttribute("stroke-width", "0.03");
+      polyline.setAttribute("fill", "none");
+      userLines.appendChild(polyline);
+
+      const handles = pts.map((pt, idx) => {
+        const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        c.setAttribute("r", 0.06);
+        c.setAttribute("fill", idx === 0 || idx === 3 ? "#1976d2" : "#ff9800");
+        c.setAttribute("stroke", "#222");
+        c.setAttribute("stroke-width", "0.01");
+        c.setAttribute("cursor", "pointer");
+        c.setAttribute("cx", pt.x);
+        c.setAttribute("cy", pt.y);
+        userLines.appendChild(c);
+        c.addEventListener("mousedown", function(evt) {
+          dragging = { lineIdx: lines.length, pointIdx: idx };
+          evt.stopPropagation();
+        });
+        return c;
+      });
+
+      const lineObj = { points: pts, polyline, handles };
+      lines.push(lineObj);
+      updateLine(lineObj);
+    });
+  }
+
+  addBtn.addEventListener("click", function() {
+    const pts = [
+      { x: 50, y: 150 },
+      { x: 200, y: 100 },
+      { x: 400, y: 200 },
+      { x: 550, y: 150 }
+    ];
+    const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    polyline.setAttribute("stroke", "blue");
+    polyline.setAttribute("stroke-width", "2");
+    polyline.setAttribute("fill", "none");
+    userLines.appendChild(polyline);
+
+    const handles = pts.map((pt, idx) => {
+      const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      c.setAttribute("r", 8);
+      c.setAttribute("fill", idx === 0 || idx === 3 ? "#1976d2" : "#ff9800");
+      c.setAttribute("stroke", "#222");
+      c.setAttribute("stroke-width", "2");
+      c.setAttribute("cursor", "pointer");
+      c.setAttribute("cx", pt.x);
+      c.setAttribute("cy", pt.y);
+      userLines.appendChild(c);
+      c.addEventListener("mousedown", function(evt) {
+        dragging = { lineIdx: lines.length - 1, pointIdx: idx };
+        evt.stopPropagation();
+      });
+      return c;
+    });
+
+    const lineObj = { points: pts, polyline, handles };
+    lines.push(lineObj);
+    updateLine(lineObj);
+    saveLines();
+  });
+
+  // Remove the last line
+  removeBtn.addEventListener("click", function() {
+    if (lines.length === 0) return;
+    const lastLine = lines.pop();
+    userLines.removeChild(lastLine.polyline);
+    lastLine.handles.forEach(handle => userLines.removeChild(handle));
+    saveLines();
+  });
+
+  // Drag logic
+  svg.addEventListener("mousemove", function(evt) {
+    if (!dragging) return;
+    const { x, y } = svgPoint(evt);
+    const line = lines[dragging.lineIdx];
+    if (!line) return;
+    line.points[dragging.pointIdx].x = Math.max(0, Math.min(600, x));
+    line.points[dragging.pointIdx].y = Math.max(0, Math.min(300, y));
+    updateLine(line);
+    saveLines();
+  });
+
+  window.addEventListener("mouseup", function() {
+    dragging = null;
+  });
+
+  // Load lines on page load or when returning to this section
+  document.addEventListener("DOMContentLoaded", loadLines);
+  // If you use step navigation, also call loadLines() when showing step3
+  window.showStep = (function(orig) {
+    return function(step) {
+      orig(step);
+      if (step === 3) loadLines();
+    };
+  })(window.showStep || function() {});
+
+})();
+</script>
+
+  <!-- Abschnitt 4 -->
+  <section class="hidden" id="step4">
+    <h2>Auftrag 4</h2>
+    <p>Warum erscheint das Bild in 3D?</p>
+    <input type="text" id="answer4">
+  </section>
+
+  <!-- Abschluss-Nachricht -->
+  <section class="hidden" id="stepEnd">
+    <h2>Du hast alle Aufgaben gelöst!</h2>
+    <p>Gehe zurück zur karte.</p>
+    <script>
+      // Check if all required answers are filled
+      let miraskop_done = false;
+      window.addEventListener("DOMContentLoaded", function() {
+        const answer1 = document.getElementById('answer1').value.trim();
+        const answer4 = document.getElementById('answer4').value.trim();
+        const miraskop_user = localStorage.getItem('miraskop_user') ? localStorage.getItem('miraskop_user').trim() : "";
+        if (answer1 !== "" && answer4 !== "" && miraskop_user !== "") {
+          miraskop_done = true;
+        }
+      });
+    </script>
+  </section>
+
+  <script>
+    let currentStep = 1;
+    const totalSteps = 4;
+
+    // Antworten laden (falls vorhanden)
+    window.onload = function() {
+      if (localStorage.getItem('answer1')) {
+        document.getElementById('answer1').value = localStorage.getItem('answer1');
+      }
+      if (localStorage.getItem('answer4')) {
+        document.getElementById('answer4').value = localStorage.getItem('answer4');
+      }
+      if (localStorage.getItem('currentStep')) {
+        currentStep = parseInt(localStorage.getItem('currentStep'));
+      }
+      showStep(currentStep);
+
+      // Save answer1 and answer4 to localStorage on input
+      document.getElementById('answer1').addEventListener('input', function() {
+        localStorage.setItem('answer1', this.value);
+      });
+      document.getElementById('answer4').addEventListener('input', function() {
+        localStorage.setItem('answer4', this.value);
+      });
+    }
+
+    function saveProgress() {
+      localStorage.setItem('answer1', document.getElementById('answer1').value);
+      localStorage.setItem('answer4', document.getElementById('answer4').value);
+      localStorage.setItem('currentStep', currentStep);
+    }
+
+    function showStep(step) {
+      // Alle Abschnitte verstecken
+      for (let i = 1; i <= totalSteps; i++) {
+        document.getElementById(`step${i}`).classList.add('hidden');
+      }
+      document.getElementById('stepEnd').classList.add('hidden');
+
+      // Aktuellen Abschnitt anzeigen
+      if (step > totalSteps) {
+        document.getElementById('stepEnd').classList.remove('hidden');
+      } else {
+        document.getElementById(`step${step}`).classList.remove('hidden');
+      }
+    }
+
+    function nextStep() {
+      saveProgress();
+      if (currentStep < totalSteps) {
+        currentStep++;
+      } else {
+        currentStep = totalSteps + 1;
+      }
+      showStep(currentStep);
+    }
+
+    function prevStep() {
+      if (currentStep > 1) {
+        currentStep--;
+        showStep(currentStep);
+      }
+    }
+
+    function returnToMap() {
+      saveProgress();
+      // Hier die URL deiner Karte einfügen:
+      window.location.href = "index.html";
+    }
+  </script>
+
+</body>
+</html>
